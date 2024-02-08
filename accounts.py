@@ -204,12 +204,13 @@ def user_nav_options(user_input):
         add_user_handler_replica(username, ssh_key)
         nodes = list_nodes()
         os.system(f'sudo useradd -m {username}')
-        print(f'sudo -u {username} mkdir -p /home/{username}/.ssh && sudo -u {username} echo "{ssh_key}" > /home/{username}/.ssh/authorized_keys')
-        os.system(f'sudo -u {username} mkdir -p /home/{username}/.ssh && sudo -u {username} echo "{ssh_key}" > /home/{username}/.ssh/authorized_keys')
+        os.system(f'sudo -u {username} mkdir -p /home/{username}/.ssh')
+        os.system(f'echo "{ssh_key}" | sudo -u manoj tee /home/{username}/.ssh/authorized_keys >/dev/null')
         for node in nodes:
             try:
                 os.system(f'ssh ec2-user@{node["ipv4"]} sudo useradd -m {username}')
-                os.system(f'ssh ec2-user@{node["ipv4"]} sudo -u {username} mkdir -p /home/{username}/.ssh && sudo -u {username} echo "{ssh_key}" > /home/{username}/.ssh/authorized_keys')
+                os.system(f'ssh ec2-user@{node["ipv4"]} sudo -u {username} mkdir -p /home/{username}/.ssh')
+                os.system(f'ssh ec2-user@{node["ipv4"]} echo "{ssh_key}" | sudo -u manoj tee /home/{username}/.ssh/authorized_keys >/dev/null')
             except:
                 print(f'Failed sync in {node["ipv4"]}')
         custom_input("Completed!")
