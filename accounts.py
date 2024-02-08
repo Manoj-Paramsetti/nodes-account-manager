@@ -160,11 +160,11 @@ def modify_user_handler():
     if selected_account["target"] == "*":
         nodes = list_nodes()
         for node in nodes:
-            os.system(f'ssh ubuntu@{node["ipv4"]} sudo echo "{sshkey}" > /home/{username}/.ssh/authorized_keys')
-            os.system(f'ssh ubuntu@{node["ipv4"]} sudo chown {username}:{username} user/{username}/.ssh/authorized_keys')
+            os.system(f'ssh ec2-user@{node["ipv4"]} sudo echo "{sshkey}" > /home/{username}/.ssh/authorized_keys')
+            os.system(f'ssh ec2-user@{node["ipv4"]} sudo chown {username}:{username} user/{username}/.ssh/authorized_keys')
     else:
-        os.system(f'ssh ubuntu@{selected_account["target"]} sudo echo "{sshkey}" > /home/{username}/.ssh/authorized_keys')
-        os.system(f'ssh ubuntu@{selected_account["target"]} sudo chown {username}:{username} user/{username}/.ssh/authorized_keys')
+        os.system(f'ssh ec2-user@{selected_account["target"]} sudo echo "{sshkey}" > /home/{username}/.ssh/authorized_keys')
+        os.system(f'ssh ec2-user@{selected_account["target"]} sudo chown {username}:{username} user/{username}/.ssh/authorized_keys')
 
 def delete_user_handler():
     accounts = list_users()
@@ -176,9 +176,9 @@ def delete_user_handler():
         nodes = list_nodes()
         os.system("sudo userdel -r {username}")
         for node in nodes:
-            os.system(f'ssh ubuntu@{node["ipv4"]} sudo userdel -r {username}')
+            os.system(f'ssh ec2-user@{node["ipv4"]} sudo userdel -r {username}')
     else:
-        os.system(f'ssh ubuntu@{selected_account["target"]} sudo userdel -r {username}')
+        os.system(f'ssh ec2-user@{selected_account["target"]} sudo userdel -r {username}')
 
 def delete_node_handler():
     node = list_nodes()
@@ -211,9 +211,9 @@ def user_nav_options(user_input):
         # os.system(f'sudo chown {username}:{username} user/{username}/.ssh/authorized_keys')
         for node in nodes:
             try:
-                os.system(f'ssh ubuntu@{node["ipv4"]} sudo useradd -m {username}')
-                os.system(f'ssh ubuntu@{node["ipv4"]} sudo -u {username} mkdir -p /home/{username}/.ssh && echo "{ssh_key}" > /home/{username}/.ssh/authorized_keys ')
-                os.system(f'ssh ubuntu@{node["ipv4"]} sudo chown {username}:{username} user/{username}/.ssh/authorized_keys')
+                os.system(f'ssh ec2-user@{node["ipv4"]} sudo useradd -m {username}')
+                os.system(f'ssh ec2-user@{node["ipv4"]} sudo -u {username} mkdir -p /home/{username}/.ssh && echo "{ssh_key}" > /home/{username}/.ssh/authorized_keys ')
+                os.system(f'ssh ec2-user@{node["ipv4"]} sudo chown {username}:{username} user/{username}/.ssh/authorized_keys')
             except:
                 print(f'Failed sync in {node["ipv4"]}')
         custom_input("Completed!")
@@ -226,9 +226,9 @@ def user_nav_options(user_input):
         id = custom_input("ID")
         selected_node = nodes[int(id)-1]
         add_user_handler_targeted(username, ssh_key, selected_node)
-        os.system(f'ssh ubuntu@{selected_node["ipv4"]} sudo useradd -m {username}')
-        os.system(f'ssh ubuntu@{selected_node["ipv4"]} sudo echo "{ssh_key}" > /home/{username}/.ssh/authorized_keys')
-        os.system(f'ssh ubuntu@{selected_node["ipv4"]} sudo chown {username}:{username} user/{username}/.ssh/authorized_keys')
+        os.system(f'ssh ec2-user@{selected_node["ipv4"]} sudo useradd -m {username}')
+        os.system(f'ssh ec2-user@{selected_node["ipv4"]} sudo echo "{ssh_key}" > /home/{username}/.ssh/authorized_keys')
+        os.system(f'ssh ec2-user@{selected_node["ipv4"]} sudo chown {username}:{username} user/{username}/.ssh/authorized_keys')
     elif user_input == "3":
         list_all_users()
     elif user_input == "4":
