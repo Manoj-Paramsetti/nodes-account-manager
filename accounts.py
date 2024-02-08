@@ -174,10 +174,11 @@ def delete_user_handler():
     username = selected_account["username"]
     if selected_account["target"] == "*":
         nodes = list_nodes()
+        os.system("sudo userdel -r {username}")
         for node in nodes:
-            os.system(f'ssh ubuntu@{node["ipv4"]} sudo rm -m {username}')
+            os.system(f'ssh ubuntu@{node["ipv4"]} sudo userdel -r {username}')
     else:
-        os.system(f'ssh ubuntu@{selected_account["target"]} sudo rm -m {username}')
+        os.system(f'ssh ubuntu@{selected_account["target"]} sudo userdel -r {username}')
 
 def delete_node_handler():
     node = list_nodes()
