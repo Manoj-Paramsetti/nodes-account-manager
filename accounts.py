@@ -205,12 +205,13 @@ def user_nav_options(user_input):
         add_user_handler_replica(username, ssh_key)
         nodes = list_nodes()
         os.system(f'sudo useradd -m {username}')
-        os.system(f'sudo echo "{ssh_key}" > /home/{username}/.ssh/authorized_keys')
-        os.system(f'sudo chown {username}:{username} user/{username}/.ssh/authorized_keys')
+        os.system("")
+        os.system(f'sudo su {username} && mkdir ~/.ssh && echo "{ssh_key}" > /home/{username}/.ssh/authorized_keys')
+        # os.system(f'sudo chown {username}:{username} user/{username}/.ssh/authorized_keys')
         for node in nodes:
             try:
                 os.system(f'ssh ubuntu@{node["ipv4"]} sudo useradd -m {username}')
-                os.system(f'ssh ubuntu@{node["ipv4"]} sudo echo "{ssh_key}" > /home/{username}/.ssh/authorized_keys')
+                os.system(f'ssh ubuntu@{node["ipv4"]} sudo su {username} && mkdir ~/.ssh && echo "{ssh_key}" > /home/{username}/.ssh/authorized_keys')
                 os.system(f'ssh ubuntu@{node["ipv4"]} sudo chown {username}:{username} user/{username}/.ssh/authorized_keys')
             except:
                 print(f'Failed sync in {node["ipv4"]}')
