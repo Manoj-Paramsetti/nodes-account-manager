@@ -174,7 +174,7 @@ def delete_user_handler():
     username = selected_account["username"]
     if selected_account["target"] == "*":
         nodes = list_nodes()
-        os.system("sudo userdel -r {username}")
+        os.system(f"sudo userdel -r {username}")
         for node in nodes:
             os.system(f'ssh ec2-user@{node["ipv4"]} sudo userdel -r {username}')
     else:
