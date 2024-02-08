@@ -21,7 +21,7 @@ if len(sys.argv) == 2 and sys.argv[1] == "init":
     exit()
 
 Accounts = dynamodb.Table("bastion_accounts")
-Nodes = dynamodb.Table("bastino_nodes")
+Nodes = dynamodb.Table("bastion_nodes")
 
 def custom_input(prompt=""):
     return input("\n" + Back.GREEN + prompt + " > " + Style.RESET_ALL + " ")
@@ -159,7 +159,7 @@ def modify_user_handler():
     username = selected_account["username"]
     if selected_account["target"] == "*":
         nodes = list_nodes()
-        for node in nodes["Items"]:
+        for node in nodes:
             os.system(f'ssh ubuntu@{node["ipv4"]} sudo echo "{sshkey}" > /home/{username}/.ssh/authorized_keys')
             os.system(f'ssh ubuntu@{node["ipv4"]} sudo chown {username}:{username} user/{username}/.ssh/authorized_keys')
     else:
@@ -174,7 +174,7 @@ def delete_user_handler():
     username = selected_account["username"]
     if selected_account["target"] == "*":
         nodes = list_nodes()
-        for node in nodes["Items"]:
+        for node in nodes:
             os.system(f'ssh ubuntu@{node["ipv4"]} sudo rm -m {username}')
     else:
         os.system(f'ssh ubuntu@{selected_account["target"]} sudo rm -m {username}')
@@ -207,7 +207,7 @@ def user_nav_options(user_input):
         os.system(f'sudo useradd -m {username}')
         os.system(f'sudo echo "{ssh_key}" > /home/{username}/.ssh/authorized_keys')
         os.system(f'sudo chown {username}:{username} user/{username}/.ssh/authorized_keys')
-        for node in nodes["Items"]:
+        for node in nodes:
             try:
                 os.system(f'ssh ubuntu@{node["ipv4"]} sudo useradd -m {username}')
                 os.system(f'ssh ubuntu@{node["ipv4"]} sudo echo "{ssh_key}" > /home/{username}/.ssh/authorized_keys')
