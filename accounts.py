@@ -160,11 +160,9 @@ def modify_user_handler():
     if selected_account["target"] == "*":
         nodes = list_nodes()
         for node in nodes:
-            os.system(f'ssh ec2-user@{node["ipv4"]} sudo echo "{sshkey}" > /home/{username}/.ssh/authorized_keys')
-            os.system(f'ssh ec2-user@{node["ipv4"]} sudo chown {username}:{username} user/{username}/.ssh/authorized_keys')
+            os.system(f'ssh ec2-user@{node["ipv4"]} sudo -u {username} echo "{sshkey}" > /home/{username}/.ssh/authorized_keys')
     else:
         os.system(f'ssh ec2-user@{selected_account["target"]} sudo echo "{sshkey}" > /home/{username}/.ssh/authorized_keys')
-        os.system(f'ssh ec2-user@{selected_account["target"]} sudo chown {username}:{username} user/{username}/.ssh/authorized_keys')
 
 def delete_user_handler():
     accounts = list_users()
@@ -207,13 +205,11 @@ def user_nav_options(user_input):
         nodes = list_nodes()
         os.system(f'sudo useradd -m {username}')
         os.system("")
-        os.system(f'sudo -u {username} mkdir -p /home/{username}/.ssh && echo "{ssh_key}" > /home/{username}/.ssh/authorized_keys && exit')
-        # os.system(f'sudo chown {username}:{username} user/{username}/.ssh/authorized_keys')
+        os.system(f'sudo -u {username} mkdir -p /home/{username}/.ssh && sudo -u {username} echo "{ssh_key}" > /home/{username}/.ssh/authorized_keys && exit')
         for node in nodes:
             try:
                 os.system(f'ssh ec2-user@{node["ipv4"]} sudo useradd -m {username}')
-                os.system(f'ssh ec2-user@{node["ipv4"]} sudo -u {username} mkdir -p /home/{username}/.ssh && echo "{ssh_key}" > /home/{username}/.ssh/authorized_keys ')
-                os.system(f'ssh ec2-user@{node["ipv4"]} sudo chown {username}:{username} user/{username}/.ssh/authorized_keys')
+                os.system(f'ssh ec2-user@{node["ipv4"]} sudo -u {username} mkdir -p /home/{username}/.ssh && sudo -u {username} echo "{ssh_key}" > /home/{username}/.ssh/authorized_keys ')
             except:
                 print(f'Failed sync in {node["ipv4"]}')
         custom_input("Completed!")
