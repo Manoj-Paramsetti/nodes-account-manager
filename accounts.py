@@ -210,7 +210,7 @@ def user_nav_options(user_input):
             try:
                 os.system(f'ssh ec2-user@{node["ipv4"]} sudo useradd -m {username}')
                 os.system(f'ssh ec2-user@{node["ipv4"]} sudo -u {username} mkdir -p /home/{username}/.ssh')
-                os.system(f'ssh ec2-user@{node["ipv4"]} echo "{ssh_key}" | sudo -u manoj tee /home/{username}/.ssh/authorized_keys >/dev/null')
+                os.system(f'ssh ec2-user@{node["ipv4"]} \'echo "{ssh_key}" | sudo -u {username} tee /home/{username}/.ssh/authorized_keys >/dev/null\'')
             except:
                 print(f'Failed sync in {node["ipv4"]}')
         custom_input("Completed!")
