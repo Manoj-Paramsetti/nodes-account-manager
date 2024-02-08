@@ -204,7 +204,7 @@ def user_nav_options(user_input):
         add_user_handler_replica(username, ssh_key)
         nodes = list_nodes()
         os.system(f'sudo useradd -m {username}')
-        print('sudo -u {username} mkdir -p /home/{username}/.ssh && sudo -u {username} echo "{ssh_key}" > /home/{username}/.ssh/authorized_keys')
+        print(f'sudo -u {username} mkdir -p /home/{username}/.ssh && sudo -u {username} echo "{ssh_key}" > /home/{username}/.ssh/authorized_keys')
         os.system(f'sudo -u {username} mkdir -p /home/{username}/.ssh && sudo -u {username} echo "{ssh_key}" > /home/{username}/.ssh/authorized_keys')
         for node in nodes:
             try:
