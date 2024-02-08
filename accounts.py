@@ -162,7 +162,7 @@ def modify_user_handler():
         for node in nodes:
             os.system(f'ssh ec2-user@{node["ipv4"]} sudo -u {username} echo "{sshkey}" > /home/{username}/.ssh/authorized_keys')
     else:
-        os.system(f'ssh ec2-user@{selected_account["target"]} sudo echo "{sshkey}" > /home/{username}/.ssh/authorized_keys')
+        os.system(f'ssh ec2-user@{selected_account["target"]} sudo -u {username} echo "{sshkey}" > /home/{username}/.ssh/authorized_keys')
 
 def delete_user_handler():
     accounts = list_users()
@@ -204,12 +204,12 @@ def user_nav_options(user_input):
         add_user_handler_replica(username, ssh_key)
         nodes = list_nodes()
         os.system(f'sudo useradd -m {username}')
-        os.system("")
-        os.system(f'sudo -u {username} mkdir -p /home/{username}/.ssh && sudo -u {username} echo "{ssh_key}" > /home/{username}/.ssh/authorized_keys && exit')
+        print('sudo -u {username} mkdir -p /home/{username}/.ssh && sudo -u {username} echo "{ssh_key}" > /home/{username}/.ssh/authorized_keys')
+        os.system(f'sudo -u {username} mkdir -p /home/{username}/.ssh && sudo -u {username} echo "{ssh_key}" > /home/{username}/.ssh/authorized_keys')
         for node in nodes:
             try:
                 os.system(f'ssh ec2-user@{node["ipv4"]} sudo useradd -m {username}')
-                os.system(f'ssh ec2-user@{node["ipv4"]} sudo -u {username} mkdir -p /home/{username}/.ssh && sudo -u {username} echo "{ssh_key}" > /home/{username}/.ssh/authorized_keys ')
+                os.system(f'ssh ec2-user@{node["ipv4"]} sudo -u {username} mkdir -p /home/{username}/.ssh && sudo -u {username} echo "{ssh_key}" > /home/{username}/.ssh/authorized_keys')
             except:
                 print(f'Failed sync in {node["ipv4"]}')
         custom_input("Completed!")
