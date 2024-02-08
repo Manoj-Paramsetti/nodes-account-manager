@@ -20,8 +20,8 @@ if len(sys.argv) == 2 and sys.argv[1] == "init":
     print("Tables are initiated")
     exit()
 
-Accounts = dynamodb.Table("accounts")
-Nodes = dynamodb.Table("nodes")
+Accounts = dynamodb.Table("bastion_accounts")
+Nodes = dynamodb.Table("bastino_nodes")
 
 def custom_input(prompt=""):
     return input("\n" + Back.GREEN + prompt + " > " + Style.RESET_ALL + " ")
