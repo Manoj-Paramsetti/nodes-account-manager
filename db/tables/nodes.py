@@ -2,11 +2,11 @@ from db import dynamodb, client
 
 def init():
     response = client.list_tables()
-    if "nodes" in response["TableNames"]:
+    if "bastion_nodes" in response["TableNames"]:
         return
         
     table = dynamodb.create_table(
-        TableName='nodes',
+        TableName='bastion_nodes',
         KeySchema=[
             {
                 'AttributeName': 'node_type',

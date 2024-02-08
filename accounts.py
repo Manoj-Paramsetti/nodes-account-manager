@@ -1,7 +1,7 @@
 import sys
 import os
 import time
-
+import re
 from colorama import Fore, Back, Style
 from db import dynamodb
 from db.tables.accounts import init as accounts_init
@@ -93,16 +93,33 @@ def delete_user(item):
 
 def delete_node(item):
     try:
-        Accounts.delete_item(
+        Nodes.delete_item(
             Key={
                 "node_type": item["node_type"],
                 "created_at": item["created_at"]
             }
         )
+        delete_user_specified_node(item['ipv4'])
     except:
         print("Wrong ID. Try again")
         custom_input()
         delete_user_handler()
+
+def delete_user_specified_node(IPV4):
+    try:
+        accounts = Accounts.scan()
+        for account in accounts["Items"]:
+            if(account["target"] == IPV4):
+                Accounts.delete_item(
+                    Key={
+                        "user_group": account['user_group'],
+                        "created_at": account['created_at']
+                    }
+                )
+    except:
+        print("Wrong ID. Try again")
+        custom_input()
+        delete_user_handler()    
 
 def list_users():
     clear()
@@ -143,11 +160,11 @@ def modify_user_handler():
     if selected_account["target"] == "*":
         nodes = list_nodes()
         for node in nodes["Items"]:
-            os.execute(f'ssh ubuntu@{node["ipv4"]} sudo echo "{sshkey}" > /home/{username}/.ssh/authorized_keys')
-            os.execute(f'ssh ubuntu@{node["ipv4"]} sudo chown {username}:{username} user/{username}/.ssh/authorized_keys')
+            os.system(f'ssh ubuntu@{node["ipv4"]} sudo echo "{sshkey}" > /home/{username}/.ssh/authorized_keys')
+            os.system(f'ssh ubuntu@{node["ipv4"]} sudo chown {username}:{username} user/{username}/.ssh/authorized_keys')
     else:
-        os.execute(f'ssh ubuntu@{selected_account["target"]} sudo echo "{sshkey}" > /home/{username}/.ssh/authorized_keys')
-        os.execute(f'ssh ubuntu@{selected_account["target"]} sudo chown {username}:{username} user/{username}/.ssh/authorized_keys')
+        os.system(f'ssh ubuntu@{selected_account["target"]} sudo echo "{sshkey}" > /home/{username}/.ssh/authorized_keys')
+        os.system(f'ssh ubuntu@{selected_account["target"]} sudo chown {username}:{username} user/{username}/.ssh/authorized_keys')
 
 def delete_user_handler():
     accounts = list_users()
@@ -158,14 +175,27 @@ def delete_user_handler():
     if selected_account["target"] == "*":
         nodes = list_nodes()
         for node in nodes["Items"]:
-            os.execute(f'ssh ubuntu@{node["ipv4"]} sudo rm -m {username}')
+            os.system(f'ssh ubuntu@{node["ipv4"]} sudo rm -m {username}')
     else:
-        os.execute(f'ssh ubuntu@{selected_account["target"]} sudo rm -m {username}')
+        os.system(f'ssh ubuntu@{selected_account["target"]} sudo rm -m {username}')
 
 def delete_node_handler():
     node = list_nodes()
+    print("\n🔴 This will delete records from the accounts. If accounts are needed in future. Replace it with the another node")
     id = custom_input()
     delete_node(node[int(id)-1])
+
+def clone_node():
+    accounts = Accounts.scan()
+    nodes = list_nodes()
+
+    selected_node_id = custom_input("Select Node ID to replica")
+    selected_target_id = custom_input("Select Target Node ID")
+    selected_node = nodes[int(selected_node_id)-1]
+    selected_target = nodes[int(selected_target_id)-1]
+    for account in accounts["Items"]:
+        if(account["target"] == selected_node["ipv4"]):
+            add_user_handler_targeted(account['username'], account['sshkey'], selected_target)
 
 def user_nav_options(user_input):
     if user_input == "1":
@@ -174,14 +204,14 @@ def user_nav_options(user_input):
         ssh_key = custom_input("SSH Key")
         add_user_handler_replica(username, ssh_key)
         nodes = list_nodes()
-        os.execute(f'sudo useradd -m {username}')
-        os.execute(f'sudo echo "{ssh_key}" > /home/{username}/.ssh/authorized_keys')
-        os.execute(f'sudo chown {username}:{username} user/{username}/.ssh/authorized_keys')
+        os.system(f'sudo useradd -m {username}')
+        os.system(f'sudo echo "{ssh_key}" > /home/{username}/.ssh/authorized_keys')
+        os.system(f'sudo chown {username}:{username} user/{username}/.ssh/authorized_keys')
         for node in nodes["Items"]:
             try:
-                os.execute(f'ssh ubuntu@{node["ipv4"]} sudo useradd -m {username}')
-                os.execute(f'ssh ubuntu@{node["ipv4"]} sudo echo "{ssh_key}" > /home/{username}/.ssh/authorized_keys')
-                os.execute(f'ssh ubuntu@{node["ipv4"]} sudo chown {username}:{username} user/{username}/.ssh/authorized_keys')
+                os.system(f'ssh ubuntu@{node["ipv4"]} sudo useradd -m {username}')
+                os.system(f'ssh ubuntu@{node["ipv4"]} sudo echo "{ssh_key}" > /home/{username}/.ssh/authorized_keys')
+                os.system(f'ssh ubuntu@{node["ipv4"]} sudo chown {username}:{username} user/{username}/.ssh/authorized_keys')
             except:
                 print(f'Failed sync in {node["ipv4"]}')
         custom_input("Completed!")
@@ -194,9 +224,9 @@ def user_nav_options(user_input):
         id = custom_input("ID")
         selected_node = nodes[int(id)-1]
         add_user_handler_targeted(username, ssh_key, selected_node)
-        os.execute(f'ssh ubuntu@{selected_node["ipv4"]} sudo useradd -m {username}')
-        os.execute(f'ssh ubuntu@{selected_node["ipv4"]} sudo echo "{ssh_key}" > /home/{username}/.ssh/authorized_keys')
-        os.execute(f'ssh ubuntu@{selected_node["ipv4"]} sudo chown {username}:{username} user/{username}/.ssh/authorized_keys')
+        os.system(f'ssh ubuntu@{selected_node["ipv4"]} sudo useradd -m {username}')
+        os.system(f'ssh ubuntu@{selected_node["ipv4"]} sudo echo "{ssh_key}" > /home/{username}/.ssh/authorized_keys')
+        os.system(f'ssh ubuntu@{selected_node["ipv4"]} sudo chown {username}:{username} user/{username}/.ssh/authorized_keys')
     elif user_input == "3":
         list_all_users()
     elif user_input == "4":
@@ -222,8 +252,7 @@ def node_nav_options(user_input):
     elif user_input == "4":
         delete_node_handler()
     elif user_input == "5":
-        # Replace nodes in target
-        pass
+        clone_node()
     elif user_input == "6":
         welcome_screen()
     else:
@@ -249,7 +278,7 @@ def manage_nodes():
     print("2. List Nodes")
     print("3. Sync Node")
     print("4. Delete Node")
-    print("5. Replace Node")
+    print("5. Replica Node Accounts (Not Synchronizable in Nodes)")
     print("6. Go back to Home")
 
     user_input = custom_input()
@@ -279,6 +308,3 @@ def welcome_screen():
 
 if __name__ == "__main__":
     welcome_screen()
-
-# sudo chown user:group user/.ssh/authorized_keys
-# sudo useradd -m <username>

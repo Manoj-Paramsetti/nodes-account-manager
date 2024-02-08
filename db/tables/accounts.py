@@ -2,11 +2,11 @@ from db import dynamodb, client
 
 def init():
     response = client.list_tables()
-    if "accounts" in response["TableNames"]:
+    if "bastion_accounts" in response["TableNames"]:
         return
         
     table = dynamodb.create_table(
-        TableName='accounts',
+        TableName='bastion_accounts',
         KeySchema=[
             {
                 'AttributeName': 'user_group',
