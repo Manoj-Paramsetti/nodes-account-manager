@@ -1,67 +1,104 @@
 import sys
 import os
+import time
 
 from colorama import Fore, Back, Style
-
-from sqlalchemy import create_engine, Column, Integer, String, ForeignKey
-from sqlalchemy.orm import declarative_base
-from sqlalchemy.orm import sessionmaker
-
-engine = create_engine('sqlite:///keys.sqlite')
-Base = declarative_base()
+from db import dynamodb
+from db.tables.accounts import init as accounts_init
+from db.tables.nodes import init as nodes_init
 
 clear = lambda: os.system('clear')
 
-class Accounts(Base):
-    __tablename__ = 'accounts'
-
-    id = Column(Integer, primary_key=True)
-    name = Column(String, unique=True)
-    sshkey = Column(String(900))
-
-class Node(Base):
-    __tablename__ = 'nodes'
-
-    id = Column(Integer, primary_key=True)
-    ipv4 = Column(String, unique=True)
-
 def init():
     clear()
+    accounts_init()
+    nodes_init()
     print("Initialized DB")
-    Base.metadata.create_all(engine)
+
+if len(sys.argv) == 2 and sys.argv[1] == "init":
+    init()
+    print("Tables are initiated")
+    exit()
+
+Accounts = dynamodb.Table("accounts")
+Nodes = dynamodb.Table("nodes")
 
 def custom_input(prompt=""):
     return input("\n" + Back.GREEN + prompt + " > " + Style.RESET_ALL + " ")
 
-Session = sessionmaker(bind=engine)
-session = Session()
+def add_user_handler_replica(username, _ssh_key):
+    Accounts.put_item(
+        Item = {
+            "user_group": "non-sudoer",
+            "created_at": time.time_ns(),
+            "username": username,
+            "sshkey": _ssh_key,
+            "target": "*"
+        }
+    )
 
-def add_user_record(username, _ssh_key):
-    new_key = Accounts(name=username, sshkey=_ssh_key)
-    session.add_all([new_key])
-    session.commit()
+def add_user_handler_targeted(username, _ssh_key, target):
+    Accounts.put_item(
+        Item = {
+            "user_group": "non-sudoer",
+            "created_at": time.time_ns(),
+            "username": username,
+            "sshkey": _ssh_key,
+            "target": target["ipv4"]
+        }
+    )
+def add_node_handler(ipv4):
+    Nodes.put_item(
+        Item = {
+            "node_type": "worker",
+            "created_at": time.time_ns(),
+            "ipv4": ipv4,
+        }
+    )
 
-def update_ssh_key(_id):
+def update_ssh_key(item):
     try:
-        updator = session.query(Accounts).filter_by(id=_id).first()
-        if not updator:
-            raise
-
-        new_key = custom_input("New Key")
-        updator.sshkey = new_key
-        session.commit()
+       new_ssh = custom_input("New SSH")
+       Accounts.update_item(
+           Key={
+                "user_group": item["user_group"],
+                "created_at": item["created_at"]
+            },
+            UpdateExpression="set #s = :s",
+            ExpressionAttributeNames={
+                "#s": "sshkey"
+            },
+            ExpressionAttributeValues={
+                ":s": new_ssh
+            }
+       )
+       return new_ssh
     except:
         print("Wrong ID. Try again")
         custom_input()
         modify_user_handler()
 
-def delete_user(id):
+def delete_user(item):
     try:
-        record_to_delete = session.query(Accounts).filter_by(id=id).first()
-        if not record_to_delete:
-            raise
-        session.delete(record_to_delete)
-        session.commit()
+        Accounts.delete_item(
+            Key={
+                "user_group": item["user_group"],
+                "created_at": item["created_at"]
+            }
+        )
+    except:
+        print("Wrong ID. Try again")
+        custom_input()
+        delete_user_handler()
+
+def delete_node(item):
+    try:
+        Accounts.delete_item(
+            Key={
+                "node_type": item["node_type"],
+                "created_at": item["created_at"]
+            }
+        )
     except:
         print("Wrong ID. Try again")
         custom_input()
@@ -69,66 +106,162 @@ def delete_user(id):
 
 def list_users():
     clear()
-    all_accounts = session.query(Accounts).all()
-
-    for account in all_accounts:
-        print(account.id, account.name, account.sshkey)
+    all_accounts = Accounts.scan()
+    i = 1
+    for account in all_accounts["Items"]:
+        print(i, account["user_group"], account["username"], account["target"])
+        i+=1
+    return all_accounts["Items"]
     
 def list_nodes():
-    pass
+    clear()
+    all_node = Nodes.scan()
+    i = 1
+    for account in all_node["Items"]:
+        print(i, account["node_type"], account["ipv4"])
+        i+=1
+    return all_node["Items"]
 
 def list_all_users():
     list_users()
     custom_input()
-    manage_user()
+    manage_users()
+
+def list_all_nodes():
+    list_nodes()
+    custom_input()
+    manage_nodes()
 
 def modify_user_handler():
-    list_users()
+    accounts =  list_users()
 
-    id = custom_input("Pass the ID to select")    
-    update_ssh_key(id)
+    id = custom_input("Pass the ID to select")   
+    selected_account =  accounts[int(id)-1]
+    sshkey = update_ssh_key(selected_account)
+
+    username = selected_account["username"]
+    if selected_account["target"] == "*":
+        nodes = list_nodes()
+        for node in nodes["Items"]:
+            os.execute(f'ssh ubuntu@{node["ipv4"]} sudo echo "{sshkey}" > /home/{username}/.ssh/authorized_keys')
+            os.execute(f'ssh ubuntu@{node["ipv4"]} sudo chown {username}:{username} user/{username}/.ssh/authorized_keys')
+    else:
+        os.execute(f'ssh ubuntu@{selected_account["target"]} sudo echo "{sshkey}" > /home/{username}/.ssh/authorized_keys')
+        os.execute(f'ssh ubuntu@{selected_account["target"]} sudo chown {username}:{username} user/{username}/.ssh/authorized_keys')
 
 def delete_user_handler():
-    list_users()
+    accounts = list_users()
     id = custom_input()
-    delete_user(id)
+    selected_account =  accounts[int(id)-1]
+    delete_user(accounts[int(id)-1])
+    username = selected_account["username"]
+    if selected_account["target"] == "*":
+        nodes = list_nodes()
+        for node in nodes["Items"]:
+            os.execute(f'ssh ubuntu@{node["ipv4"]} sudo rm -m {username}')
+    else:
+        os.execute(f'ssh ubuntu@{selected_account["target"]} sudo rm -m {username}')
+
+def delete_node_handler():
+    node = list_nodes()
+    id = custom_input()
+    delete_node(node[int(id)-1])
 
 def user_nav_options(user_input):
     if user_input == "1":
+        clear()
         username = custom_input("Username")
         ssh_key = custom_input("SSH Key")
-
-        add_user_record(username, ssh_key)
+        add_user_handler_replica(username, ssh_key)
+        nodes = list_nodes()
+        os.execute(f'sudo useradd -m {username}')
+        os.execute(f'sudo echo "{ssh_key}" > /home/{username}/.ssh/authorized_keys')
+        os.execute(f'sudo chown {username}:{username} user/{username}/.ssh/authorized_keys')
+        for node in nodes["Items"]:
+            try:
+                os.execute(f'ssh ubuntu@{node["ipv4"]} sudo useradd -m {username}')
+                os.execute(f'ssh ubuntu@{node["ipv4"]} sudo echo "{ssh_key}" > /home/{username}/.ssh/authorized_keys')
+                os.execute(f'ssh ubuntu@{node["ipv4"]} sudo chown {username}:{username} user/{username}/.ssh/authorized_keys')
+            except:
+                print(f'Failed sync in {node["ipv4"]}')
+        custom_input("Completed!")
     elif user_input == "2":
-        list_all_users()
+        clear()
+        username = custom_input("Username")
+        ssh_key = custom_input("SSH Key")
+        clear()
+        nodes = list_nodes()
+        id = custom_input("ID")
+        selected_node = nodes[int(id)-1]
+        add_user_handler_targeted(username, ssh_key, selected_node)
+        os.execute(f'ssh ubuntu@{selected_node["ipv4"]} sudo useradd -m {username}')
+        os.execute(f'ssh ubuntu@{selected_node["ipv4"]} sudo echo "{ssh_key}" > /home/{username}/.ssh/authorized_keys')
+        os.execute(f'ssh ubuntu@{selected_node["ipv4"]} sudo chown {username}:{username} user/{username}/.ssh/authorized_keys')
     elif user_input == "3":
-        modify_user_handler()
+        list_all_users()
     elif user_input == "4":
-        delete_user_handler()
+        modify_user_handler()
     elif user_input == "5":
+        delete_user_handler()
+    elif user_input == "6":
         welcome_screen()
     else:
         custom_input("Wrong Input")
-        manage_user()
+        manage_users()
 
-def manage_user():
+def node_nav_options(user_input):
+    if user_input == "1":
+        clear()
+        ipv4 = custom_input("IPV4")
+        add_node_handler(ipv4)
+    elif user_input == "2":
+        list_all_nodes()
+    elif user_input == "3":
+        # Sync
+        pass
+    elif user_input == "4":
+        delete_node_handler()
+    elif user_input == "5":
+        # Replace nodes in target
+        pass
+    elif user_input == "6":
+        welcome_screen()
+    else:
+        custom_input("Wrong Input")
+        manage_nodes()
+
+
+def manage_users():
     clear()
-    print("1. Add User")
-    print("2. List User")
-    print("3. Modify Key")
-    print("4. Delete User")
-    print("5. Go back to Home")
+    print("1. Add User with Replication")
+    print("2. Add User in Single Node")
+    print("3. List User")
+    print("4. Modify Key")
+    print("5. Delete User")
+    print("6. Go back to Home")
 
     user_input = custom_input()
     user_nav_options(user_input)
+
+def manage_nodes():
+    clear()
+    print("1. Add Nodes")
+    print("2. List Nodes")
+    print("3. Sync Node")
+    print("4. Delete Node")
+    print("5. Replace Node")
+    print("6. Go back to Home")
+
+    user_input = custom_input()
+    node_nav_options(user_input)
 
 def nav_options(user_input):
     if user_input == "1":
         init()
     elif user_input == "2":
-        list_nodes()
+        manage_nodes()
     elif user_input == "3":
-        manage_user()
+        manage_users()
     else:
         custom_input("Wrong Input")
         welcome_screen()
@@ -145,12 +278,7 @@ def welcome_screen():
     nav_options(user_input)
 
 if __name__ == "__main__":
-    if len(sys.argv) == 2 and sys.argv[1] == "init":
-        init()
-        print("Tables are initiated")
-        exit()
     welcome_screen()
-    session.close()
 
 # sudo chown user:group user/.ssh/authorized_keys
 # sudo useradd -m <username>
