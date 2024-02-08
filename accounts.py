@@ -207,12 +207,12 @@ def user_nav_options(user_input):
         nodes = list_nodes()
         os.system(f'sudo useradd -m {username}')
         os.system("")
-        os.system(f'sudo -u {username} mkdir -p ~/.ssh && echo "{ssh_key}" > /home/{username}/.ssh/authorized_keys && exit')
+        os.system(f'sudo -u {username} mkdir -p /home/{username}/.ssh && echo "{ssh_key}" > /home/{username}/.ssh/authorized_keys && exit')
         # os.system(f'sudo chown {username}:{username} user/{username}/.ssh/authorized_keys')
         for node in nodes:
             try:
                 os.system(f'ssh ubuntu@{node["ipv4"]} sudo useradd -m {username}')
-                os.system(f'ssh ubuntu@{node["ipv4"]} sudo -u {username} mkdir -p ~/.ssh && echo "{ssh_key}" > /home/{username}/.ssh/authorized_keys ')
+                os.system(f'ssh ubuntu@{node["ipv4"]} sudo -u {username} mkdir -p /home/{username}/.ssh && echo "{ssh_key}" > /home/{username}/.ssh/authorized_keys ')
                 os.system(f'ssh ubuntu@{node["ipv4"]} sudo chown {username}:{username} user/{username}/.ssh/authorized_keys')
             except:
                 print(f'Failed sync in {node["ipv4"]}')
