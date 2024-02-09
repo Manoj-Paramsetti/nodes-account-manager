@@ -61,7 +61,7 @@ def add_user_in_targeted(username, _ssh_key, target):
             "created_at": time.time_ns(),
             "username": username,
             "sshkey": _ssh_key,
-            "target": target["ipv4"]
+            "target": target["region"]
         }
     )
 
@@ -69,7 +69,7 @@ def add_node_in_db(ipv4, name, username):
     Nodes.put_item(
         Item = {
             "node_type": "bastion",
-            "created_at": time.time_ns(),
+            "region": time.time_ns(),
             "ipv4": ipv4,
             "name": name,
             "username": username
@@ -116,7 +116,7 @@ def delete_node(item):
         Nodes.delete_item(
             Key={
                 "node_type": item["node_type"],
-                "created_at": item["created_at"]
+                "region": item["region"]
             }
         )
         delete_user_specified_node(item['ipv4'])
@@ -154,8 +154,8 @@ def list_nodes():
     clear()
     all_node = Nodes.scan()
     i = 1
-    for account in all_node["Items"]:
-        print(i, account["node_type"], account["ipv4"])
+    for node in all_node["Items"]:
+        print(i, node["node_type"], node["ipv4"], node["region"])
         i+=1
     return all_node["Items"]
 
@@ -172,7 +172,13 @@ def modify_user_handler():
         for node in nodes:
             os.system(f'ssh {node["username"]}@{node["ipv4"]} \'echo "{sshkey}" | sudo -u {username} tee /home/{username}/.ssh/authorized_keys >/dev/null\'')
     else:
-        os.system(f'ssh ec2-user@{selected_account["target"]} \'echo "{sshkey}" | sudo -u {username} tee /home/{username}/.ssh/authorized_keys >/dev/null\'')
+        nodes = list_nodes()
+        clear()
+        selected_node = {}
+        for i in nodes:
+            if(selected_account["target"] == i["region"]):
+                selected_node = i["region"]
+        os.system(f'ssh {selected_node["username"]}@{selected_node["ipv4"]} \'echo "{sshkey}" | sudo -u {username} tee /home/{username}/.ssh/authorized_keys >/dev/null\'')
     custom_input("Completed!")
 
 def delete_user_handler():
@@ -186,7 +192,13 @@ def delete_user_handler():
         for node in nodes:
             os.system(f'ssh {node["username"]}@{node["ipv4"]} sudo userdel -r {username}')
     else:
-        os.system(f'ssh ec2-user@{selected_account["target"]} sudo userdel -r {username}')       
+        nodes = list_nodes()
+        clear()
+        selected_node = {}
+        for i in nodes:
+            if(selected_account["target"] == i["region"]):
+                selected_node = i["region"]
+        os.system(f'ssh {selected_node["username"]}@{selected_node["ipv4"]} sudo userdel -r {username}')       
 
 def delete_node_handler():
     node = list_nodes()
@@ -203,7 +215,7 @@ def clone_node():
     selected_node = nodes[int(selected_node_id)-1]
     selected_target = nodes[int(selected_target_id)-1]
     for account in accounts["Items"]:
-        if(account["target"] == selected_node["ipv4"]):
+        if(account["target"] == selected_node["region"]):
             add_user_in_targeted(account['username'], account['sshkey'], selected_target)
 
 def user_nav_options(user_input):
