@@ -21,8 +21,8 @@ def init():
     username = os.popen("whoami").read().replace('\n', '')
     if document.status_code == 200:
         node_info = json.loads(document.text)
-        nodes = Nodes.scan()
-        nodes.put_item(
+        
+        Nodes.put_item(
             Item = {
                 "node_type": "bastion",
                 "region": node_info["region"],
