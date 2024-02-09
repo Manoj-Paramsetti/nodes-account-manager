@@ -17,7 +17,7 @@ def init():
     accounts_init()
     nodes_init()
     document = requests.request(url="http://169.254.169.254/latest/dynamic/instance-identity/document", method="get")
-    ipv4 = requests.request(url="curl -s http://169.254.169.254/latest/meta-data/public-ipv4", method="get")
+    ipv4 = requests.request(url="http://169.254.169.254/latest/meta-data/public-ipv4", method="get")
     username = os.popen("whoami").read().replace('\n', '')
     if document.status_code == 200:
         node_info = json.loads(document.text)
