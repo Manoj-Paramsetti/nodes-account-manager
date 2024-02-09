@@ -2,6 +2,9 @@ import sys
 import os
 import time
 import re
+import requests
+import json
+
 from colorama import Fore, Back, Style
 from db import dynamodb
 from db.tables.accounts import init as accounts_init
@@ -13,11 +16,25 @@ def init():
     clear()
     accounts_init()
     nodes_init()
-    print("Initialized DB")
+    document = requests.request(url="http://169.254.169.254/latest/dynamic/instance-identity/document", method="get")
+    ipv4 = requests.request(url="curl -s http://169.254.169.254/latest/meta-data/public-ipv4", method="get")
+    username = os.popen("whoami").read().replace('\n', '')
+    if document.status_code == 200:
+        node_info = json.loads(document.text)
+        nodes = Nodes.scan()
+        nodes.put_item(
+            Item = {
+                "node_type": "bastion",
+                "region": node_info["region"],
+                "ipv4": ipv4,
+                "name": f'{node_info["instanceId"]}-{node_info["instanceType"]}',
+                "username": username
+            }
+        )
 
-if len(sys.argv) == 2 and sys.argv[1] == "init":
+
+if len(sys.argv) == 2 and "init" in sys.argv:
     init()
-    print("Tables are initiated")
     exit()
 
 Accounts = dynamodb.Table("bastion_accounts")
@@ -26,7 +43,7 @@ Nodes = dynamodb.Table("bastion_nodes")
 def custom_input(prompt=""):
     return input("\n" + Back.GREEN + prompt + " > " + Style.RESET_ALL + " ")
 
-def add_user_handler_replica(username, _ssh_key):
+def add_user_with_replicas(username, _ssh_key):
     Accounts.put_item(
         Item = {
             "user_group": "non-sudoer",
@@ -37,7 +54,7 @@ def add_user_handler_replica(username, _ssh_key):
         }
     )
 
-def add_user_handler_targeted(username, _ssh_key, target):
+def add_user_in_targeted(username, _ssh_key, target):
     Accounts.put_item(
         Item = {
             "user_group": "non-sudoer",
@@ -47,12 +64,15 @@ def add_user_handler_targeted(username, _ssh_key, target):
             "target": target["ipv4"]
         }
     )
-def add_node_handler(ipv4):
+
+def add_node_in_db(ipv4, name, username):
     Nodes.put_item(
         Item = {
-            "node_type": "worker",
+            "node_type": "bastion",
             "created_at": time.time_ns(),
             "ipv4": ipv4,
+            "name": name,
+            "username": username
         }
     )
 
@@ -139,16 +159,6 @@ def list_nodes():
         i+=1
     return all_node["Items"]
 
-def list_all_users():
-    list_users()
-    custom_input()
-    manage_users()
-
-def list_all_nodes():
-    list_nodes()
-    custom_input()
-    manage_nodes()
-
 def modify_user_handler():
     accounts =  list_users()
 
@@ -160,9 +170,10 @@ def modify_user_handler():
     if selected_account["target"] == "*":
         nodes = list_nodes()
         for node in nodes:
-            os.system(f'ssh ec2-user@{node["ipv4"]} sudo -u {username} echo "{sshkey}" > /home/{username}/.ssh/authorized_keys')
+            os.system(f'ssh {node["username"]}@{node["ipv4"]} \'echo "{sshkey}" | sudo -u {username} tee /home/{username}/.ssh/authorized_keys >/dev/null\'')
     else:
-        os.system(f'ssh ec2-user@{selected_account["target"]} sudo -u {username} echo "{sshkey}" > /home/{username}/.ssh/authorized_keys')
+        os.system(f'ssh ec2-user@{selected_account["target"]} \'echo "{sshkey}" | sudo -u {username} tee /home/{username}/.ssh/authorized_keys >/dev/null\'')
+    custom_input("Completed!")
 
 def delete_user_handler():
     accounts = list_users()
@@ -172,11 +183,10 @@ def delete_user_handler():
     username = selected_account["username"]
     if selected_account["target"] == "*":
         nodes = list_nodes()
-        os.system(f"sudo userdel -r {username}")
         for node in nodes:
-            os.system(f'ssh ec2-user@{node["ipv4"]} sudo userdel -r {username}')
+            os.system(f'ssh {node["username"]}@{node["ipv4"]} sudo userdel -r {username}')
     else:
-        os.system(f'ssh ec2-user@{selected_account["target"]} sudo userdel -r {username}')
+        os.system(f'ssh ec2-user@{selected_account["target"]} sudo userdel -r {username}')       
 
 def delete_node_handler():
     node = list_nodes()
@@ -194,23 +204,21 @@ def clone_node():
     selected_target = nodes[int(selected_target_id)-1]
     for account in accounts["Items"]:
         if(account["target"] == selected_node["ipv4"]):
-            add_user_handler_targeted(account['username'], account['sshkey'], selected_target)
+            add_user_in_targeted(account['username'], account['sshkey'], selected_target)
 
 def user_nav_options(user_input):
     if user_input == "1":
         clear()
         username = custom_input("Username")
         ssh_key = custom_input("SSH Key")
-        add_user_handler_replica(username, ssh_key)
+        add_user_with_replicas(username, ssh_key)
         nodes = list_nodes()
-        os.system(f'sudo useradd -m {username}')
-        os.system(f'sudo -u {username} mkdir -p /home/{username}/.ssh')
-        os.system(f'echo "{ssh_key}" | sudo -u manoj tee /home/{username}/.ssh/authorized_keys >/dev/null')
         for node in nodes:
             try:
-                os.system(f'ssh ec2-user@{node["ipv4"]} sudo useradd -m {username}')
-                os.system(f'ssh ec2-user@{node["ipv4"]} sudo -u {username} mkdir -p /home/{username}/.ssh')
-                os.system(f'ssh ec2-user@{node["ipv4"]} \'echo "{ssh_key}" | sudo -u {username} tee /home/{username}/.ssh/authorized_keys >/dev/null\'')
+                print(node["ipv4"], end="")
+                os.system(f'ssh {node["username"]}@{node["ipv4"]} sudo useradd -m {username}')
+                os.system(f'ssh {node["username"]}@{node["ipv4"]} sudo -u {username} mkdir -p /home/{username}/.ssh')
+                os.system(f'ssh {node["username"]}@{node["ipv4"]} \'echo "{ssh_key}" | sudo -u {username} tee /home/{username}/.ssh/authorized_keys >/dev/null\'')
             except:
                 print(f'Failed sync in {node["ipv4"]}')
         custom_input("Completed!")
@@ -222,12 +230,15 @@ def user_nav_options(user_input):
         nodes = list_nodes()
         id = custom_input("ID")
         selected_node = nodes[int(id)-1]
-        add_user_handler_targeted(username, ssh_key, selected_node)
-        os.system(f'ssh ec2-user@{selected_node["ipv4"]} sudo useradd -m {username}')
-        os.system(f'ssh ec2-user@{selected_node["ipv4"]} sudo echo "{ssh_key}" > /home/{username}/.ssh/authorized_keys')
-        os.system(f'ssh ec2-user@{selected_node["ipv4"]} sudo chown {username}:{username} user/{username}/.ssh/authorized_keys')
+        add_user_in_targeted(username, ssh_key, selected_node)
+        os.system(f'ssh {selected_node["username"]}@{selected_node["ipv4"]} sudo useradd -m {username}')
+        os.system(f'ssh {selected_node["username"]}@{selected_node["ipv4"]} sudo -u {username} mkdir -p /home/{username}/.ssh')
+        os.system(f'ssh {selected_node["username"]}@{selected_node["ipv4"]} \'echo "{ssh_key}" | sudo -u {username} tee /home/{username}/.ssh/authorized_keys >/dev/null\'')
+        custom_input("Completed!")
     elif user_input == "3":
-        list_all_users()
+        list_users()
+        custom_input()
+        manage_users()
     elif user_input == "4":
         modify_user_handler()
     elif user_input == "5":
@@ -242,9 +253,13 @@ def node_nav_options(user_input):
     if user_input == "1":
         clear()
         ipv4 = custom_input("IPV4")
-        add_node_handler(ipv4)
+        name = custom_input("Node Name")
+        username = custom_input("Username for SSH")
+        add_node_in_db(ipv4, name, username)
     elif user_input == "2":
-        list_all_nodes()
+        list_nodes()
+        custom_input()
+        manage_nodes()
     elif user_input == "3":
         # Sync
         pass
@@ -257,7 +272,6 @@ def node_nav_options(user_input):
     else:
         custom_input("Wrong Input")
         manage_nodes()
-
 
 def manage_users():
     clear()
