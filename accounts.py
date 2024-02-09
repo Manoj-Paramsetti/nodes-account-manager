@@ -3,11 +3,13 @@ import os
 import time
 import requests
 import json
+import re
 
 from colorama import Back, Style
 from db import dynamodb
 from db.tables.accounts import init as accounts_init
 from db.tables.nodes import init as nodes_init
+
 try:
     clear = lambda: os.system('clear')
 
@@ -18,7 +20,22 @@ try:
     node_info = json.loads(document.text)
 
     exit_commands = ["q", "exit", "quit"]
-
+    
+    def clean_comments(groups):
+        data = list(groups)
+        for line in data:
+            match = re.match("^[\s]*#", line)
+            if match or line == '':
+                groups.remove(line)
+        return sorted(groups)
+    
+    def get_user_list(host_user=None, ip=None, no_ssh = False):
+        if no_ssh:
+            users = os.popen("cat /etc/passwd | awk -F: '{ print $1 }'").read().split('\n')
+            return clean_comments(users)   
+        users = os.popen(f'ssh {host_user}@{ip}' + ' ' + '\'cat /etc/passwd | awk -F: "{ print $1 }"\'')
+        return clean_comments(users)
+        
     def init():
         clear()
         accounts_init()
@@ -36,11 +53,14 @@ try:
                 }
             )
             accounts = Accounts.scan()["Items"]
-
+            users_list = get_user_list(no_ssh=True)
             for account in accounts:
                 if account["target"] in ["*", node_info["region"]]:
-                    os.system(f'sudo useradd -m {account["username"]}')
-                    os.system(f'sudo -u {account["username"]} mkdir -p /home/{account["username"]}/.ssh')
+                    if (account["username"] not in users_list):
+                        os.system(f'sudo useradd -m {account["username"]}')
+                        os.system(f'sudo -u {account["username"]} mkdir -p /home/{account["username"]}/.ssh')
+                    else:
+                        print("\n" + Back.GREEN + "Overwriting SSH key on", account["username"] + Style.RESET_ALL + " ")
                     os.system(f'echo "{account["sshkey"]}" | sudo -u {account["username"]} tee /home/{account["username"]}/.ssh/authorized_keys >/dev/null')
 
     if len(sys.argv) == 2 and "init" in sys.argv:
@@ -207,7 +227,7 @@ try:
         if selected_account["target"] == "*":
             nodes = list_nodes()
             for node in nodes:
-                os.system(f'ssh {node["username"]}@{node["ipv4"]} sudo userdel -r {username}')
+                os.system(f'ssh {node["username"]}@{node["ipv4"]} sudo userdel -rf {username}')
         else:
             nodes = list_nodes()
             clear()
@@ -215,7 +235,7 @@ try:
             for i in nodes:
                 if(selected_account["target"] == i["region"]):
                     selected_node = i["region"]
-            os.system(f'ssh {selected_node["username"]}@{selected_node["ipv4"]} sudo userdel -r {username}')       
+            os.system(f'ssh {selected_node["username"]}@{selected_node["ipv4"]} sudo userdel -rf {username}')       
 
     def sync_node_handler():
         nodes = list_nodes()
@@ -228,16 +248,27 @@ try:
             return
         accounts  = list_users()
         clear()
+        user_list = []
+        if selected_node["region"] != node_info["region"]:
+            user_list = get_user_list(selected_node["username"], selected_node["ipv4"])
+        else:
+            user_list = get_user_list(no_ssh=True)
         for account in accounts:
             if account["target"] in ["*", selected_node["region"]]:
                 print(f'Adding account: {account["username"]}')
                 if selected_node["region"] != node_info["region"]:
-                    os.system(f'ssh {selected_node["username"]}@{selected_node["ipv4"]} sudo useradd -m {account["username"]}')
-                    os.system(f'ssh {selected_node["username"]}@{selected_node["ipv4"]} sudo -u {account["username"]} mkdir -p /home/{account["username"]}/.ssh')
+                    if account["username"] not in user_list:
+                        os.system(f'ssh {selected_node["username"]}@{selected_node["ipv4"]} sudo useradd -m {account["username"]}')
+                        os.system(f'ssh {selected_node["username"]}@{selected_node["ipv4"]} sudo -u {account["username"]} mkdir -p /home/{account["username"]}/.ssh')
+                    else:
+                        print("\n" + Back.GREEN + "User already exists! Overwriting Keys" + Style.RESET_ALL + " ")
                     os.system(f'ssh {selected_node["username"]}@{selected_node["ipv4"]} \'echo "{account["sshkey"]}" | sudo -u {account["username"]} tee /home/{account["username"]}/.ssh/authorized_keys >/dev/null\'')
                 else:
-                    os.system(f'sudo useradd -m {account["username"]}')
-                    os.system(f'sudo -u {account["username"]} mkdir -p /home/{account["username"]}/.ssh')
+                    if account["username"] not in user_list:
+                        os.system(f'sudo useradd -m {account["username"]}')
+                        os.system(f'sudo -u {account["username"]} mkdir -p /home/{account["username"]}/.ssh')
+                    else:
+                        print("\n" + Back.GREEN + "User already exists! Overwriting Keys" + Style.RESET_ALL + " ")
                     os.system(f'echo "{account["sshkey"]}" | sudo -u {account["username"]} tee /home/{account["username"]}/.ssh/authorized_keys >/dev/null')                
 
     def delete_node_handler():
@@ -282,12 +313,20 @@ try:
                 try:
                     if node["region"] != node_info["region"]:
                         print(node["ipv4"], end="")
-                        os.system(f'ssh {node["username"]}@{node["ipv4"]} sudo useradd -m {username}')
-                        os.system(f'ssh {node["username"]}@{node["ipv4"]} sudo -u {username} mkdir -p /home/{username}/.ssh')
+                        user_list = get_user_list(node["username"], node["ipv4"])
+                        if username not in user_list:
+                            os.system(f'ssh {node["username"]}@{node["ipv4"]} sudo useradd -m {username}')
+                            os.system(f'ssh {node["username"]}@{node["ipv4"]} sudo -u {username} mkdir -p /home/{username}/.ssh')
+                        else:
+                            print("\n" + Back.GREEN + "User already exists! Overwriting Keys" + Style.RESET_ALL + " ")
                         os.system(f'ssh {node["username"]}@{node["ipv4"]} \'echo "{ssh_key}" | sudo -u {username} tee /home/{username}/.ssh/authorized_keys >/dev/null\'')
                     else:
-                        os.system(f'sudo useradd -m {username}')
-                        os.system(f'sudo -u {username} mkdir -p /home/{username}/.ssh')
+                        user_list = get_user_list(no_ssh=True)
+                        if username not in user_list:
+                            os.system(f'sudo useradd -m {username}')
+                            os.system(f'sudo -u {username} mkdir -p /home/{username}/.ssh')
+                        else:
+                            print("\n" + Back.GREEN + "User already exists! Overwriting Keys" + Style.RESET_ALL + " ")
                         os.system(f'echo "{ssh_key}" | sudo -u {username} tee /home/{username}/.ssh/authorized_keys >/dev/null')
                 except:
                     print(f'Failed sync in {node["ipv4"]}')
@@ -307,13 +346,23 @@ try:
                 return
             add_user_in_targeted(username, ssh_key, selected_node)
             if selected_node["region"] != node_info["region"]:
-                os.system(f'ssh {selected_node["username"]}@{selected_node["ipv4"]} sudo useradd -m {username}')
-                os.system(f'ssh {selected_node["username"]}@{selected_node["ipv4"]} sudo -u {username} mkdir -p /home/{username}/.ssh')
-                os.system(f'ssh {selected_node["username"]}@{selected_node["ipv4"]} \'echo "{ssh_key}" | sudo -u {username} tee /home/{username}/.ssh/authorized_keys >/dev/null\'')
+                user_list = get_user_list(host_user=selected_node["username"], ip=selected_node["ipv4"])
+                if username not in selected_node["username"]:
+                    os.system(f'ssh {selected_node["username"]}@{selected_node["ipv4"]} sudo useradd -m {username}')
+                    os.system(f'ssh {selected_node["username"]}@{selected_node["ipv4"]} sudo -u {username} mkdir -p /home/{username}/.ssh')
+                    os.system(f'ssh {selected_node["username"]}@{selected_node["ipv4"]} \'echo "{ssh_key}" | sudo -u {username} tee /home/{username}/.ssh/authorized_keys >/dev/null\'')
+                else:
+                    print("\n" + Back.GREEN + "User already exists! Use modify key option to update a key" + Style.RESET_ALL + " ")
+                    manage_users()
             else:
-                os.system(f'sudo useradd -m {username}')
-                os.system(f'sudo -u {username} mkdir -p /home/{username}/.ssh')
-                os.system(f'echo "{ssh_key}" | sudo -u {username} tee /home/{username}/.ssh/authorized_keys >/dev/null')
+                user_list = get_user_list(no_ssh=True)
+                if username not in user_list:
+                    os.system(f'sudo useradd -m {username}')
+                    os.system(f'sudo -u {username} mkdir -p /home/{username}/.ssh')
+                    os.system(f'echo "{ssh_key}" | sudo -u {username} tee /home/{username}/.ssh/authorized_keys >/dev/null')
+                else:
+                    print("\n" + Back.GREEN + "User already exists! Use modify key option to update a key" + Style.RESET_ALL + " ")
+                    manage_users()
             custom_input("Completed!")
         elif user_input == "3":
             list_users()
