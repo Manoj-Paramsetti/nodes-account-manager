@@ -24,12 +24,11 @@ def init():
     username = os.popen("whoami").read().replace('\n', '')
     if document.status_code == 200:
         node_info = json.loads(document.text)
-        
         Nodes.put_item(
             Item = {
                 "node_type": "bastion",
                 "region": node_info["region"],
-                "ipv4": ipv4,
+                "ipv4": ipv4.text,
                 "name": f'{node_info["instanceId"]}-{node_info["instanceType"]}',
                 "username": username
             }
