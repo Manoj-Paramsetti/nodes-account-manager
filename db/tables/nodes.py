@@ -13,7 +13,7 @@ def init():
                 'KeyType': 'HASH'
             },
             {
-                'AttributeName': 'created_at',
+                'AttributeName': 'region',
                 'KeyType': 'SORT'
             }
         ],
@@ -23,8 +23,8 @@ def init():
                 'AttributeType': 'S'
             },
             {
-                'AttributeName': 'created_at',
-                'AttributeType': 'N'
+                'AttributeName': 'region',
+                'AttributeType': 'S'
             }
         ],
         ProvisionedThroughput={

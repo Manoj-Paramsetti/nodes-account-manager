@@ -12,6 +12,9 @@ from db.tables.nodes import init as nodes_init
 
 clear = lambda: os.system('clear')
 
+Accounts = dynamodb.Table("bastion_accounts")
+Nodes = dynamodb.Table("bastion_nodes")
+
 def init():
     clear()
     accounts_init()
@@ -32,13 +35,10 @@ def init():
             }
         )
 
-
 if len(sys.argv) == 2 and "init" in sys.argv:
     init()
     exit()
 
-Accounts = dynamodb.Table("bastion_accounts")
-Nodes = dynamodb.Table("bastion_nodes")
 
 def custom_input(prompt=""):
     return input("\n" + Back.GREEN + prompt + " > " + Style.RESET_ALL + " ")
