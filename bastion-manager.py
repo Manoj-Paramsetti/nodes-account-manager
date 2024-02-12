@@ -293,9 +293,9 @@ bastion-manager
             nodes = list_nodes()
             clear()
             selected_node = {}
-            for i in nodes:
-                if(selected_account["target"] == i["region"]):
-                    selected_node = i["region"]
+            for node in nodes:
+                if(selected_account["target"] == node["region"]):
+                    selected_node = node["region"]
             os.system(f'ssh {selected_node["username"]}@{selected_node["ipv4"]} \'echo "{sshkey}" | sudo -u {username} tee /home/{username}/.ssh/authorized_keys >/dev/null\'')
         custom_input("Completed!")
 
