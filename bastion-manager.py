@@ -1,10 +1,17 @@
+## This script will sync wil other bastion nodes and help to access the nodes inside the private subnet using port forwarding.
+## This script will inject users and keys only on the bastion servers.
+## This script is dependent with the python, ssh and libraries mentioned in the requirements.txt.
+# Import required packages for the script.
 import sys
 import os
 import time
 import requests
 import json
 import re
+import datetime
 
+# External Libraries for pip.
+# Setup with the pip install -r requirements.txt
 from colorama import Back, Style
 from db import dynamodb
 from db.tables.accounts import init as accounts_init
@@ -13,36 +20,49 @@ from db.tables.nodes import init as nodes_init
 try:
     clear = lambda: os.system('clear')
 
+    # Create tables as object cursors.
     Accounts = dynamodb.Table("bastion_accounts")
     Nodes = dynamodb.Table("bastion_nodes")
 
+    # Get the information of current node from aws. Requires version of metadata information.
     document = requests.request(url="http://169.254.169.254/latest/dynamic/instance-identity/document", method="get")
     node_info = json.loads(document.text)
 
+    # Exit commands for the cli.
     exit_commands = ["q", "exit", "quit"]
     
-    def clean_comments(groups):
-        data = list(groups)
+    # Clear comments for parsing.
+    def clean_comments(users):
+        data = list(users)
         for line in data:
+            ## Check for the comments in any line.
             match = re.match("^[\s]*#", line)
+            ## Check for the match for comments or empty string,
             if match or line == '':
-                groups.remove(line)
-        return sorted(groups)
+                users.remove(line)
+        ## Return the sorted users list.
+        return sorted(users)
     
+    # Get all users list from the host.
     def get_user_list(host_user=None, ip=None, no_ssh = False):
         if no_ssh:
             users = os.popen("cat /etc/passwd | awk -F: '{ print $1 }'").read().split('\n')
-            return clean_comments(users)   
+            return clean_comments(users)
         users = os.popen(f'ssh {host_user}@{ip}' + ' ' + '\'cat /etc/passwd | awk -F: "{ print $1 }"\'')
         return clean_comments(users)
         
+    # Initialise the node.
     def init():
         clear()
+        # Initialise the nodes.
         accounts_init()
         nodes_init()
+        # Collect the public IPV4.
         ipv4 = requests.request(url="http://169.254.169.254/latest/meta-data/public-ipv4", method="get")
+        # Get the current user
         username = os.popen("whoami").read().replace('\n', '')
         if document.status_code == 200:
+            # Adding the node in the db.
             Nodes.put_item(
                 Item = {
                     "node_type": "bastion",
@@ -52,8 +72,11 @@ try:
                     "username": username
                 }
             )
+            # Get all users from the db.
             accounts = Accounts.scan()["Items"]
+            # Get all users in the current node.
             users_list = get_user_list(no_ssh=True)
+            # Iterate all users in the db and check for existence and create a node.
             for account in accounts:
                 if account["target"] in ["*", node_info["region"]]:
                     if (account["username"] not in users_list):
@@ -63,13 +86,67 @@ try:
                         print("\n" + Back.GREEN + "Overwriting SSH key on", account["username"] + Style.RESET_ALL + " ")
                     os.system(f'echo "{account["sshkey"]}" | sudo -u {account["username"]} tee /home/{account["username"]}/.ssh/authorized_keys >/dev/null')
 
-    if len(sys.argv) == 2 and "init" in sys.argv:
+    # If the host is down then deregister the node.
+    def unregister_node(region):
+        try:
+            Nodes.delete_item(
+                Key={
+                    "node_type": "bastion",
+                    "region": region
+                }
+            )
+        except:
+            print(f"[{str(datetime.datetime.now())}] Something went wrong in unregistering the node region {region}")
+
+    # Check the health of the node using the ssh.
+    def health_check():
+
+        # Get all the nodes from the db.
+        nodes_list = Nodes.scan()["Items"]
+
+        # Iterate all node and check the health
+        for node in nodes_list:
+            # Skip the health check for the current region.
+            if node["region"] == node_info["region"]:
+                continue
+            # Echo "healthy" in the ssh and check the health.
+            health_msg = os.popen(f'ssh {node["username"]}@{node["ipv4"]} echo "healthy"').read().split("\n")[0]
+            if health_msg != "healthy":
+                # If the connection is refused deregister the node from the db.
+                if "connection refused" in health_msg.lower():
+                    print(f"[{str(datetime.datetime.now())}] Connection Refused with", node["ipv4"])
+                    unregister_node(node["region"])
+                # If the connection is time out within the default timeframe then deregister the node.
+                elif "operation timed out" in health_msg.lower():
+                    print(f"[{str(datetime.datetime.now())}] Operation Timed Out:", node["ivp4"])
+                    unregister_node(node["region"])
+                # If the access is denied because of any public key then don't deregister and note it in the mails.
+                elif "denied" in health_msg.lower():
+                    print(f"[{str(datetime.datetime.now())}] Add the ssh key on", node["ipv4"], node["region"])
+                else:
+                    print(f"[{str(datetime.datetime.now())}] Something went wrong on", node["ipv4"], node["region"])
+                    unregister_node(node["region"])
+
+    ## Arguments Handling
+    if len(sys.argv) >= 2 and "init" in sys.argv:
         init()
         exit()
-
+    elif len(sys.argv) >= 2 and "health-check" in sys.argv:
+        health_check()
+        exit()
+    elif len(sys.argv) >= 2 and ("--help" in sys.argv or "-h" in sys.argv):
+        print(
+'''
+bastion-manager
+'''
+        )
+        exit()
+    
+    # Input wrapper
     def custom_input(prompt=""):
         return input("\n" + Back.GREEN + prompt + " > " + Style.RESET_ALL + " ")
 
+    # Add users in multiple node.
     def add_user_with_replicas(username, _ssh_key):
         Accounts.put_item(
             Item = {
@@ -81,6 +158,7 @@ try:
             }
         )
 
+    # Add users in specified node.
     def add_user_in_targeted(username, _ssh_key, target):
         Accounts.put_item(
             Item = {
@@ -92,6 +170,7 @@ try:
             }
         )
 
+    # Add node in the db.
     def add_node_in_db(ipv4, name, username):
         Nodes.put_item(
             Item = {
@@ -103,6 +182,7 @@ try:
             }
         )
 
+    # Upda the ssh key for all the user in all node.
     def update_ssh_key(item):
         try:
             new_ssh = custom_input("New SSH")
@@ -125,6 +205,7 @@ try:
             custom_input()
             modify_user_handler()
 
+    # delete the user record.
     def delete_user(item):
         try:
             Accounts.delete_item(
@@ -138,6 +219,7 @@ try:
             custom_input()
             delete_user_handler()
 
+    # delete the node from the db including the accounts table.
     def delete_node(item):
         try:
             Nodes.delete_item(
@@ -152,6 +234,7 @@ try:
             custom_input()
             delete_user_handler()
 
+    # delete users in specified node.
     def delete_user_specified_node(IPV4):
         try:
             accounts = Accounts.scan()
@@ -168,6 +251,7 @@ try:
             custom_input()
             delete_user_handler()    
 
+    # display and return list of user from the db.
     def list_users():
         clear()
         all_accounts = Accounts.scan()
@@ -176,7 +260,8 @@ try:
             print(i, account["user_group"], account["username"], account["target"])
             i+=1
         return all_accounts["Items"]
-        
+    
+    # display and return list of nodes from the db.
     def list_nodes():
         clear()
         all_node = Nodes.scan()
@@ -186,6 +271,7 @@ try:
             i+=1
         return all_node["Items"]
 
+    # Change the ssh key for an user.
     def modify_user_handler():
         accounts =  list_users()
 
@@ -213,6 +299,7 @@ try:
             os.system(f'ssh {selected_node["username"]}@{selected_node["ipv4"]} \'echo "{sshkey}" | sudo -u {username} tee /home/{username}/.ssh/authorized_keys >/dev/null\'')
         custom_input("Completed!")
 
+    # Delete the user in the nodes and record
     def delete_user_handler():
         accounts = list_users()
         id = custom_input()
@@ -227,15 +314,21 @@ try:
         if selected_account["target"] == "*":
             nodes = list_nodes()
             for node in nodes:
-                os.system(f'ssh {node["username"]}@{node["ipv4"]} sudo userdel -rf {username}')
+                if node["region"] != node_info["region"]:
+                    os.system(f'ssh {node["username"]}@{node["ipv4"]} sudo userdel -rf {username}')
+                else:
+                    os.system(f'sudo userdel -rf {username}')
         else:
             nodes = list_nodes()
             clear()
             selected_node = {}
-            for i in nodes:
-                if(selected_account["target"] == i["region"]):
-                    selected_node = i["region"]
-            os.system(f'ssh {selected_node["username"]}@{selected_node["ipv4"]} sudo userdel -rf {username}')       
+            for node in nodes:
+                if(selected_account["target"] == node["region"]):
+                    selected_node = node["region"]
+            if selected_node["region"] != node_info["region"]:    
+                os.system(f'ssh {selected_node["username"]}@{selected_node["ipv4"]} sudo userdel -rf {username}')    
+            else:
+                os.system(f'sudo userdel -rf {username}')   
 
     def sync_node_handler():
         nodes = list_nodes()
@@ -255,7 +348,7 @@ try:
             user_list = get_user_list(no_ssh=True)
         for account in accounts:
             if account["target"] in ["*", selected_node["region"]]:
-                print(f'Adding account: {account["username"]}')
+                print(f'[{str(datetime.datetime.now())}] Adding account: {account["username"]}')
                 if selected_node["region"] != node_info["region"]:
                     if account["username"] not in user_list:
                         os.system(f'ssh {selected_node["username"]}@{selected_node["ipv4"]} sudo useradd -m {account["username"]}')
@@ -312,7 +405,7 @@ try:
             for node in nodes:
                 try:
                     if node["region"] != node_info["region"]:
-                        print(node["ipv4"], end="")
+                        print(f'[{str(datetime.datetime.now())}] Adding {username} in {node["ipv4"]}', end="")
                         user_list = get_user_list(node["username"], node["ipv4"])
                         if username not in user_list:
                             os.system(f'ssh {node["username"]}@{node["ipv4"]} sudo useradd -m {username}')
@@ -323,6 +416,7 @@ try:
                     else:
                         user_list = get_user_list(no_ssh=True)
                         if username not in user_list:
+                            print(f'[{str(datetime.datetime.now())}] Adding {username} in {node["ipv4"]}', end="")
                             os.system(f'sudo useradd -m {username}')
                             os.system(f'sudo -u {username} mkdir -p /home/{username}/.ssh')
                         else:
@@ -345,9 +439,10 @@ try:
                 manage_nodes()
                 return
             add_user_in_targeted(username, ssh_key, selected_node)
+            print(f'[{str(datetime.datetime.now())}] Adding {username} in {selected_node["ipv4"]}', end="")
             if selected_node["region"] != node_info["region"]:
                 user_list = get_user_list(host_user=selected_node["username"], ip=selected_node["ipv4"])
-                if username not in selected_node["username"]:
+                if username not in user_list:
                     os.system(f'ssh {selected_node["username"]}@{selected_node["ipv4"]} sudo useradd -m {username}')
                     os.system(f'ssh {selected_node["username"]}@{selected_node["ipv4"]} sudo -u {username} mkdir -p /home/{username}/.ssh')
                     os.system(f'ssh {selected_node["username"]}@{selected_node["ipv4"]} \'echo "{ssh_key}" | sudo -u {username} tee /home/{username}/.ssh/authorized_keys >/dev/null\'')
